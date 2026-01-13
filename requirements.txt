@@ -1,0 +1,12 @@
+Django==4.2.7
+androguard==3.4.0a1
+
+pandas>=1.5.0
+numpy>=1.23
+lxml>=4.9
+networkx>=2.5.1
+pydot>=1.4
+
+python-magic==0.4.27
+transformers>=4.40
+openpyxl>=3.1
