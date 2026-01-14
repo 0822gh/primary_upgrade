@@ -1,7 +1,4 @@
-APK Analyzer (Django) — CPU-only
-
-APK 파일을 업로드하면 정적 분석(권한/컴포넌트/API 등)과 함께
-처리방침 텍스트에서 개인정보 관련 라벨을 예측합니다.
+APK 파일과 개인정보처리방침을 업로드하면 APK 정적 분석(권한/컴포넌트/API 등) 결과와 개인정보처리방침 분석 결과를 비교합니다.
 
 
 ## 1. Requirements
@@ -46,28 +43,7 @@ out_ps_ovr폴더를 apk_analyzer에 업로드해야 합니다.
 로컬 환경에서만 준비해야 합니다.
 
 
-## 4. Permission mapping files (필수)
-
-퍼미션 → 라벨 매핑 파일을 아래 폴더에 둡니다.
-
-mapping/
-
-지원 형식:
-- CSV
-- XLSX
-
-컬럼 예시:
-Permission, Tag
-
-
-## 5. Django settings 확인
-
-apk_analyzer/settings.py 에서 모델 경로가 정확한지 확인합니다.
-
-POLICY_HF_MODEL_DIR = BASE_DIR / "apk_analyzer" / "out_ps_ovr"
-
-
-## 6. Run
+## 4. Run
 
 python manage.py migrate
 python manage.py runserver --noreload
@@ -76,7 +52,7 @@ python manage.py runserver --noreload
 http://127.0.0.1:8000/
 
 
-## 7. Notes
+## 5. Notes
 
 - 업로드된 APK 및 분석 결과는 media/ 아래에 저장됩니다.
 - media/ 디렉터리는 GitHub에 올라가지 않습니다.
