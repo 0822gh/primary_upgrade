@@ -14,9 +14,12 @@ from django.conf import settings
 from .models import APKAnalysis
 from .apk_analyzer import APKAnalyzer
 
-# ← 여기만 추가: 코랩 모델 추론 함수
+# 코랩 모델 추론 함수
 from .services.privacy_infer_hf import predict_policy_text
 from .services.perm_label_map import map_permissions_to_labels, sources_loaded
+
+# ✅ 1차 업그레이드: 라벨 기반 검토 문장 생성기
+from .services.review_sentence_generator import generate_review_sentences
 
 
 def index(request):
@@ -52,7 +55,6 @@ def upload_apk(request):
         print("policy_text length:", len(policy_text))
         print("policy_text head:", policy_text[:80])
 
-
         if not apk_file:
             messages.error(request, 'APK 파일을 선택해주세요.')
             return redirect('analyzer:index')
@@ -79,19 +81,19 @@ def upload_apk(request):
                 status='pending'
             )
 
-            # ✅ 요청마다 고유한 파일명으로 저장 (충돌 방지)
+            # 요청마다 고유한 파일명으로 저장 (충돌 방지)
             uid = uuid.uuid4().hex
             base_name = os.path.basename(apk_file.name)
             unique_name = f"{uid}_{base_name}"
 
-            # MEDIA_ROOT/temp/ 아래에 직접 저장 (default_storage open/write 꼬임 방지)
+            # MEDIA_ROOT/temp/ 아래에 직접 저장
             rel_temp_path = os.path.join("temp", unique_name)
             full_path = os.path.join(settings.MEDIA_ROOT, rel_temp_path)
 
-            # ✅ temp 폴더 생성 보장
+            # temp 폴더 생성 보장
             os.makedirs(os.path.dirname(full_path), exist_ok=True)
 
-            # ✅ 파일 저장 (chunks 사용 + with로 핸들 확실히 닫힘)
+            # 파일 저장 (chunks 사용 + with로 핸들 확실히 닫힘)
             with open(full_path, "wb") as out:
                 for chunk in apk_file.chunks():
                     out.write(chunk)
@@ -109,7 +111,7 @@ def upload_apk(request):
                 try:
                     pred = predict_policy_text(
                         policy_text,
-                        split_long_doc=True,   # 코랩 기본과 동일
+                        split_long_doc=True,
                         aggregate="max",
                         thr_pol=0.5
                     )
@@ -124,7 +126,8 @@ def upload_apk(request):
                     policy_scores = {}
 
             analysis_obj.policy_labels = policy_labels
-            # 문장 단위 라벨을 쓰지 않는다면 빈 리스트로 저장 (필드가 있으면)
+
+            # 1차 업그레이드 필드 초기화(있으면)
             if hasattr(analysis_obj, 'policy_sentence_labels'):
                 analysis_obj.policy_sentence_labels = []
 
@@ -181,7 +184,7 @@ def upload_apk(request):
             return redirect('analyzer:index')
 
         finally:
-            # ✅ 임시 APK 파일 삭제는 항상 시도 (Windows 잠금 대비 재시도)
+            # 임시 APK 파일 삭제는 항상 시도 (Windows 잠금 대비 재시도)
             if full_path:
                 _safe_remove_file(full_path)
 
@@ -226,6 +229,23 @@ def analysis_detail(request, analysis_id):
     if unknown_perms:
         compliance_messages.append(f"매핑에 없는 퍼미션(검토 필요): {', '.join(sorted(unknown_perms))}")
 
+    # ✅ 1차 업그레이드: 라벨 기반 “검토 문장” 생성
+    review_sentences = generate_review_sentences(
+        policy_labels=sorted(policy_labels),
+        perm_labels=sorted(perm_labels),
+        missing_in_policy=missing_in_policy,
+        extra_in_policy=extra_in_policy,
+        label_to_perms=label_to_perms,
+        max_evidence_per_label=2,
+    )
+
+    # ✅ (선택) DB에 저장: 비어있을 때만 채우기
+    # 이미 저장된 값이 있으면 그대로 두고, 없으면 생성값을 저장
+    if hasattr(analysis_obj, "policy_sentence_labels"):
+        if not analysis_obj.policy_sentence_labels:
+            analysis_obj.policy_sentence_labels = review_sentences
+            analysis_obj.save(update_fields=["policy_sentence_labels"])
+
     return render(request, 'analyzer/analysis_detail.html', {
         'analysis': analysis_obj,
 
@@ -237,6 +257,10 @@ def analysis_detail(request, analysis_id):
         'unknown_perms':     sorted(unknown_perms),
         'label_to_perms':    label_to_perms,
         'compliance_messages': compliance_messages,
+
+        # ▼ 1차 업그레이드 결과
+        'review_sentences': review_sentences,
+
         # 'sources_loaded':  sources_loaded(),  # 필요하면 어떤 파일을 읽었는지 확인용
     })
 
